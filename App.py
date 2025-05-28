@@ -10,11 +10,6 @@ def remover_acentos(txt):
     )
 
 def extrair_valores_robusto(prontuario):
-    """
-    Extrai dados laboratoriais de um texto de prontuário médico,
-    retornando uma string formatada conforme padrão.
-    """
-
     texto_original = prontuario
     texto = remover_acentos(prontuario).lower()
 
@@ -23,7 +18,6 @@ def extrair_valores_robusto(prontuario):
     data_coleta_match = re.search(padrao_data, texto)
     data_coleta = data_coleta_match.group(3) if data_coleta_match else 'Data nao encontrada'
 
-    # Dicionário com padrões de nomes para cada exame
     exames_formas = {
         "Cr": [r'creatinina', r'creat'],
         "eTFG": [r'etfg', r'estimativa da taxa de filtracao glomerular', r'taxa de filtracao glomerular', r'tfg'],
@@ -47,7 +41,6 @@ def extrair_valores_robusto(prontuario):
     }
 
     def encontrar_valor(exame_patterns):
-        """Procura o primeiro valor numérico próximo dos padrões do exame."""
         for pattern in exame_patterns:
             regex = rf'{pattern}[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
             match = re.search(regex, texto)
@@ -67,20 +60,34 @@ def extrair_valores_robusto(prontuario):
         if match_etfg:
             resultados["eTFG"] = match_etfg.group(2).replace(',', '.')
 
-    # Monta a saída formatada
-    partes = [f"Data de coleta: {data_coleta}"]
+    # Construção do resultado completo (com XX)
+    partes_completas = [f"Data de coleta: {data_coleta}"]
 
     for chave in ["Cr", "eTFG", "Ur", "K", "Na", "Mg", "P", "TGO", "TGP", "FAL", "gGT", "BT", "BD", "Alb", "PCR", "Lc", "Bt", "Hb", "Plaq"]:
         valor = resultados.get(chave)
         if valor is None:
             valor = "XX"
         if chave == "eTFG":
-            partes.append(f"{chave} {valor} mL/min/1,73 m²")
+            partes_completas.append(f"{chave} {valor} mL/min/1,73 m²")
         else:
-            partes.append(f"{chave} {valor}")
+            partes_completas.append(f"{chave} {valor}")
 
-    resultado_final = " | ".join(partes)
-    return resultado_final
+    resultado_completo = " | ".join(partes_completas)
+
+    # Construção do resultado filtrado (somente valores encontrados, exclui XX)
+    partes_filtradas = [f"Data de coleta: {data_coleta}"]
+
+    for chave in ["Cr", "eTFG", "Ur", "K", "Na", "Mg", "P", "TGO", "TGP", "FAL", "gGT", "BT", "BD", "Alb", "PCR", "Lc", "Bt", "Hb", "Plaq"]:
+        valor = resultados.get(chave)
+        if valor is not None:
+            if chave == "eTFG":
+                partes_filtradas.append(f"{chave} {valor} mL/min/1,73 m²")
+            else:
+                partes_filtradas.append(f"{chave} {valor}")
+
+    resultado_filtrado = " | ".join(partes_filtradas)
+
+    return resultado_completo, resultado_filtrado
 
 
 def main():
@@ -93,9 +100,11 @@ def main():
         if not prontuario_texto.strip():
             st.warning("Por favor, cole o texto do prontuário para extrair os dados.")
         else:
-            resultado = extrair_valores_robusto(prontuario_texto)
-            st.subheader("Resultado formatado:")
-            st.code(resultado)
+            completo, filtrado = extrair_valores_robusto(prontuario_texto)
+            st.subheader("Resultado Completo (com XX):")
+            st.code(completo)
+            st.subheader("Resultado Filtrado (sem XX):")
+            st.code(filtrado)
 
 
 if __name__ == "__main__":
