@@ -1,111 +1,83 @@
 import streamlit as st
 import re
-import unicodedata
 
-def remover_acentos(txt):
-    """Remove acentos para facilitar buscas insensíveis."""
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', txt)
-        if unicodedata.category(c) != 'Mn'
-    )
+st.title("Formatador de Evolução de Exames - UTI")
 
-def extrair_valores_robusto(prontuario):
-    texto_original = prontuario
-    texto = remover_acentos(prontuario).lower()
+texto_input = st.text_area("Cole aqui o texto do prontuário com os exames:", height=400)
 
-    # Extrai a data de coleta
-    padrao_data = r'(data\s*(da\s*)?coleta|coleta\s*em)[:\-]?\s*(\d{2}/\d{2}/\d{4})'
-    data_coleta_match = re.search(padrao_data, texto)
-    data_coleta = data_coleta_match.group(3) if data_coleta_match else 'Data nao encontrada'
+def extrair_data_coleta(texto):
+    match = re.search(r'Data\s+de\s+Coleta:\s*(\d{2}/\d{2}/\d{4})', texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return "Data nao encontrada"
+
+def encontrar_valor(exame_patterns, texto_original, texto_limpo):
+    # Primeiro tenta encontrar pelo método tradicional (linha única)
+    for pattern in exame_patterns:
+        regex = rf'{pattern}[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
+        match = re.search(regex, texto_limpo)
+        if match:
+            return match.group(1).replace(',', '.')
+
+    # Se não encontrar, tenta encontrar em bloco com "Resultado:"
+    for pattern in exame_patterns:
+        padrao_bloco = rf'({pattern}.*?)resultado[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
+        match = re.search(padrao_bloco, texto_original, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(2).replace(',', '.')
+
+    return None
+
+def formatar_resultado(data_coleta, resultados, remover_xx=False):
+    partes = [f"Data de coleta: {data_coleta}"]
+    for exame, valor in resultados.items():
+        if remover_xx and (valor is None or valor == "XX"):
+            continue
+        if exame == "eTFG" and valor not in [None, "XX"]:
+            partes.append(f"eTFG {valor} mL/min/1,73 m²")
+        else:
+            partes.append(f"{exame} {valor if valor else 'XX'}")
+    return " | ".join(partes)
+
+if texto_input:
+    # Original mantém quebras de linha para facilitar blocos de resultado
+    texto_original = texto_input
+    texto_limpo = re.sub(r'\s+', ' ', texto_input)  # versão sem quebras para busca direta
+
+    data_coleta = extrair_data_coleta(texto_original)
 
     exames_formas = {
-        "Cr": [r'creatinina', r'creat'],
-        "eTFG": [r'etfg', r'estimativa da taxa de filtracao glomerular', r'taxa de filtracao glomerular', r'tfg'],
-        "Ur": [r'ureia'],
-        "K": [r'potassio', r'k\W', r'potássio'],
-        "Na": [r'sodio', r'sódio'],
-        "Mg": [r'magnesio', r'mg\W'],
-        "P": [r'fosforo', r'p\W'],
-        "TGO": [r'tgo', r'aspartato aminotransferase', r'asat'],
-        "TGP": [r'tgp', r'alanina aminotransferase', r'alat'],
-        "FAL": [r'fosfatase alcalina', r'fal', r'fa alcalina'],
-        "gGT": [r'ggt', r'gamma glutamiltransferase', r'gamma gt'],
-        "BT": [r'bilirrubina total', r'bt\b', r'bilirrubina total'],
-        "BD": [r'bilirrubina direta', r'bd\b', r'bilirrubina direta'],
-        "Alb": [r'albumina', r'alb'],
-        "PCR": [r'proteina c reativa', r'pcr'],
-        "Lc": [r'leucocitos', r'leucocitos totais', r'leucocitose'],
-        "Bt": [r'bat', r'bastonetes', r'contagem de bastonetes'],
-        "Hb": [r'hemoglobina', r'hb\b'],
-        "Plaq": [r'plaquetas', r'plaq']
+        "Cr": ["creatinina"],
+        "eTFG": ["etfg", "tfgr", "tfg"],
+        "Ur": ["ureia", "uréia"],
+        "K": ["potássio", "potassio"],
+        "Na": ["sódio", "sodio"],
+        "Mg": ["magnésio", "magnesio"],
+        "P": ["fósforo", "fosforo"],
+        "TGO": ["tgo", "ast"],
+        "TGP": ["tgp", "alt"],
+        "FAL": ["fosfatase alcalina", "fal"],
+        "gGT": ["ggt", "gama gt", "gama-glutamil transferase"],
+        "BT": ["bilirrubina total", "bt"],
+        "BD": ["bilirrubina direta", "bd"],
+        "Alb": ["albumina"],
+        "PCR": ["proteína c reativa", "pcr"],
+        "Lc": ["leucócitos", "leucocitos"],
+        "Bt": ["bastões", "bastoes"],
+        "Hb": ["hemoglobina", "hb"],
+        "Plaq": ["plaquetas", "plaq"]
     }
-
-    def encontrar_valor(exame_patterns):
-        for pattern in exame_patterns:
-            regex = rf'{pattern}[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
-            match = re.search(regex, texto)
-            if match:
-                valor = match.group(1).replace(',', '.')
-                return valor
-        return None
 
     resultados = {}
     for exame, patterns in exames_formas.items():
-        val = encontrar_valor(patterns)
+        val = encontrar_valor(patterns, texto_original, texto_limpo)
         resultados[exame] = val
 
-    # Tratamento especial para eTFG (com unidades)
-    if resultados["eTFG"] is None:
-        match_etfg = re.search(r'(estimativa da taxa de filtracao glomerular|etfg|tfg)[^0-9]*[:\-]?\s*(\d+[.,]?\d*)\s*m[lL]/min', texto)
-        if match_etfg:
-            resultados["eTFG"] = match_etfg.group(2).replace(',', '.')
+    resultado_completo = formatar_resultado(data_coleta, resultados, remover_xx=False)
+    resultado_filtrado = formatar_resultado(data_coleta, resultados, remover_xx=True)
 
-    # Construção do resultado completo (com XX)
-    partes_completas = [f"Data de coleta: {data_coleta}"]
+    st.subheader("🧾 Resultado completo (com XX onde não encontrado):")
+    st.code(resultado_completo, language='text')
 
-    for chave in ["Cr", "eTFG", "Ur", "K", "Na", "Mg", "P", "TGO", "TGP", "FAL", "gGT", "BT", "BD", "Alb", "PCR", "Lc", "Bt", "Hb", "Plaq"]:
-        valor = resultados.get(chave)
-        if valor is None:
-            valor = "XX"
-        if chave == "eTFG":
-            partes_completas.append(f"{chave} {valor} mL/min/1,73 m²")
-        else:
-            partes_completas.append(f"{chave} {valor}")
-
-    resultado_completo = " | ".join(partes_completas)
-
-    # Construção do resultado filtrado (somente valores encontrados, exclui XX)
-    partes_filtradas = [f"Data de coleta: {data_coleta}"]
-
-    for chave in ["Cr", "eTFG", "Ur", "K", "Na", "Mg", "P", "TGO", "TGP", "FAL", "gGT", "BT", "BD", "Alb", "PCR", "Lc", "Bt", "Hb", "Plaq"]:
-        valor = resultados.get(chave)
-        if valor is not None:
-            if chave == "eTFG":
-                partes_filtradas.append(f"{chave} {valor} mL/min/1,73 m²")
-            else:
-                partes_filtradas.append(f"{chave} {valor}")
-
-    resultado_filtrado = " | ".join(partes_filtradas)
-
-    return resultado_completo, resultado_filtrado
-
-
-def main():
-    st.title("Extração de Exames Laboratoriais - Prontuário")
-    st.write("Cole o texto do prontuário no campo abaixo e clique em 'Extrair'.")
-
-    prontuario_texto = st.text_area("Texto do Prontuário", height=300)
-
-    if st.button("Extrair"):
-        if not prontuario_texto.strip():
-            st.warning("Por favor, cole o texto do prontuário para extrair os dados.")
-        else:
-            completo, filtrado = extrair_valores_robusto(prontuario_texto)
-            st.subheader("Resultado Completo (com XX):")
-            st.code(completo)
-            st.subheader("Resultado Filtrado (sem XX):")
-            st.code(filtrado)
-
-
-if __name__ == "__main__":
-    main()
+    st.subheader("🧼 Resultado limpo (somente exames encontrados):")
+    st.code(resultado_filtrado, language='text')
