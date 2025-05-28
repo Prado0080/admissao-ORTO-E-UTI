@@ -22,7 +22,7 @@ def extrair_valores_robusto(prontuario):
         "Cr": [r'creatinina', r'creat'],
         "eTFG": [r'etfg', r'estimativa da taxa de filtracao glomerular', r'taxa de filtracao glomerular', r'tfg'],
         "Ur": [r'ureia'],
-        "K": [r'potassio', r'k\W'],
+        "K": [r'potassio', r'k\W', r'potássio'],
         "Na": [r'sodio', r'na\W', r'sódio'],
         "Mg": [r'magnesio', r'mg\W'],
         "P": [r'fosforo', r'p\W'],
