@@ -1,83 +1,62 @@
 import streamlit as st
 import re
 
-st.title("Formatador de Evolução de Exames - UTI")
-
-texto_input = st.text_area("Cole aqui o texto do prontuário com os exames:", height=400)
-
-def extrair_data_coleta(texto):
-    match = re.search(r'Data\s+de\s+Coleta:\s*(\d{2}/\d{2}/\d{4})', texto, re.IGNORECASE)
-    if match:
-        return match.group(1)
-    return "Data nao encontrada"
-
-def encontrar_valor(exame_patterns, texto_original, texto_limpo):
-    # Primeiro tenta encontrar pelo método tradicional (linha única)
-    for pattern in exame_patterns:
-        regex = rf'{pattern}[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
-        match = re.search(regex, texto_limpo)
-        if match:
-            return match.group(1).replace(',', '.')
-
-    # Se não encontrar, tenta encontrar em bloco com "Resultado:"
-    for pattern in exame_patterns:
-        padrao_bloco = rf'({pattern}.*?)resultado[^0-9,\.\-]*[:\-]?\s*([\-]?\d+[.,]?\d*)'
-        match = re.search(padrao_bloco, texto_original, re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(2).replace(',', '.')
-
-    return None
-
-def formatar_resultado(data_coleta, resultados, remover_xx=False):
-    partes = [f"Data de coleta: {data_coleta}"]
-    for exame, valor in resultados.items():
-        if remover_xx and (valor is None or valor == "XX"):
-            continue
-        if exame == "eTFG" and valor not in [None, "XX"]:
-            partes.append(f"eTFG {valor} mL/min/1,73 m²")
-        else:
-            partes.append(f"{exame} {valor if valor else 'XX'}")
-    return " | ".join(partes)
-
-if texto_input:
-    # Original mantém quebras de linha para facilitar blocos de resultado
-    texto_original = texto_input
-    texto_limpo = re.sub(r'\s+', ' ', texto_input)  # versão sem quebras para busca direta
-
-    data_coleta = extrair_data_coleta(texto_original)
-
-    exames_formas = {
-        "Cr": ["creatinina"],
-        "eTFG": ["etfg", "tfgr", "tfg"],
-        "Ur": ["ureia", "uréia"],
-        "K": ["potássio", "potassio"],
-        "Na": ["sódio", "sodio"],
-        "Mg": ["magnésio", "magnesio"],
-        "P": ["fósforo", "fosforo"],
-        "TGO": ["tgo", "ast"],
-        "TGP": ["tgp", "alt"],
-        "FAL": ["fosfatase alcalina", "fal"],
-        "gGT": ["ggt", "gama gt", "gama-glutamil transferase"],
-        "BT": ["bilirrubina total", "bt"],
-        "BD": ["bilirrubina direta", "bd"],
-        "Alb": ["albumina"],
-        "PCR": ["proteína c reativa", "pcr"],
-        "Lc": ["leucócitos", "leucocitos"],
-        "Bt": ["bastões", "bastoes"],
-        "Hb": ["hemoglobina", "hb"],
-        "Plaq": ["plaquetas", "plaq"]
+# Função para extrair dados laboratoriais do texto
+def extrair_dados(texto):
+    padroes = {
+        'Cr': r"(?i)(?<=CREATININA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'eTFG': r"(?i)(?<=CKD-EPI[\s\S]{0,200}?)\b(\d{1,3})\s*mL/min/1,73\s*m²",
+        'Ur': r"(?i)(?<=UREIA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'K': r"(?i)(?<=POT[ÁA]SSIO[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'Na': r"(?i)(?<=S[ÓO]DIO[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'Mg': r"(?i)(?<=MAGN[ÊE]SIO[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'P': r"(?i)(?<=F[ÓO]SFORO[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'TGO': r"(?i)(?<=TGO[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'TGP': r"(?i)(?<=TGP[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'FAL': r"(?i)(?<=FOSFATASE\s+ALCALINA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'gGT': r"(?i)(?<=GAMA\s*GT[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'BT': r"(?i)(?<=BILIRRUBINA\s+TOTAL[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'BD': r"(?i)(?<=BILIRRUBINA\s+DIRETA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'Alb': r"(?i)(?<=ALBUMINA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)|(?<=Albumina\s*[:\-\s]{0,5})(\d+[\.,]\d+)",
+        'PCR': r"(?i)(?<=PROTE[IÍ]NA\s+C\s+REATIVA[\s\S]{0,200}?Resultado\W{0,5}:?\s*)(\d+[\.,]\d+)",
+        'Lc': r"(?i)(Leuc[óo]citos\s+Totais\s*:\s*)(\d+[\.,]?\d*)|\|\s*Lc\s*([\d.,]+)",
+        'Bt': r"(?i)(?<=Bastonetes[\s\S]{0,100}?\s*:\s*)(\d+[\.,]?\d*)%|\|\s*Bt\s*(\d+[.,]?\d*)%",
+        'Hb': r"(?i)(Hemoglobina\s*[:\-]?\s*)(\d+[\.,]?\d*)|\|\s*Hb\s*([\d.,]+)",
+        'Plaq': r"(?i)(Plaquetas\s*[:\-]?\s*)(\d+[\.,]?\d*)|\|\s*Plaq\s*([\d.,]+)",
     }
 
     resultados = {}
-    for exame, patterns in exames_formas.items():
-        val = encontrar_valor(patterns, texto_original, texto_limpo)
-        resultados[exame] = val
+    for chave, padrao in padroes.i'tems():
+        match = re.search(padrao, texto)
+        if match:
+            for g in match.groups():
+                if g:
+                    resultados[chave] = g.replace(',', '.').strip()
+                    break
+        else:
+            resultados[chave] = "XX"
 
-    resultado_completo = formatar_resultado(data_coleta, resultados, remover_xx=False)
-    resultado_filtrado = formatar_resultado(data_coleta, resultados, remover_xx=True)
+    data_coleta_match = re.search(r"(?i)Data de Coleta[:\-\s]+(\d{2}/\d{2}/\d{4})", texto)
+    data_coleta = data_coleta_match.group(1) if data_coleta_match else "Data nao encontrada"
 
-    st.subheader("🧾 Resultado completo (com XX onde não encontrado):")
-    st.code(resultado_completo, language='text')
+    resultado_formatado = f"Data de coleta: {data_coleta} | " + " | ".join([f"{k} {v}" for k, v in resultados.items()])
+    resultado_sem_xx = f"Data de coleta: {data_coleta} | " + " | ".join([f"{k} {v}" for k, v in resultados.items() if v != "XX"])
 
-    st.subheader("🧼 Resultado limpo (somente exames encontrados):")
-    st.code(resultado_filtrado, language='text')
+    return resultado_formatado, resultado_sem_xx
+
+
+# Interface Streamlit
+st.title("Evolução de Exames UTI")
+texto_input = st.text_area("Cole aqui o texto do prontuário com os exames:", height=500)
+
+if st.button("Extrair e formatar"):
+    if texto_input:
+        resultado1, resultado2 = extrair_dados(texto_input)
+
+        st.subheader("Formato completo (com XX nos ausentes):")
+        st.code(resultado1)
+
+        st.subheader("Formato limpo (somente resultados encontrados):")
+        st.code(resultado2)
+    else:
+        st.warning("Por favor, cole o texto do prontuário.")
