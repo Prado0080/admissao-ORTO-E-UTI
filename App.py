@@ -23,7 +23,7 @@ def extrair_valores_robusto(prontuario):
         "eTFG": [r'etfg', r'estimativa da taxa de filtracao glomerular', r'taxa de filtracao glomerular', r'tfg'],
         "Ur": [r'ureia'],
         "K": [r'potassio', r'k\W'],
-        "Na": [r'sodio', r'na\W'],
+        "Na": [r'sodio', r'na\W', r'sódio'],
         "Mg": [r'magnesio', r'mg\W'],
         "P": [r'fosforo', r'p\W'],
         "TGO": [r'tgo', r'aspartato aminotransferase', r'asat'],
