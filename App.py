@@ -1,4 +1,3 @@
-
 import streamlit as st
 import re
 from datetime import datetime
@@ -14,7 +13,7 @@ def normalizar_data(data):
         return re.sub(r'/(\d{2})$', lambda m: '/20' + m.group(1), data)
     return data
 
-# Função antiga da ortopedia
+# Função antiga da ortopedia (exatamente a que você enviou)
 def extrair_info(texto):
     hoje = datetime.today().strftime('%d/%m/%Y')
     ses = re.search(r'SES:\s+(\d+)', texto)
@@ -137,33 +136,55 @@ Conduta
 - Farmacêutico ***
 *******************************************************"""
 
-# Função nova: formatação de exames UTI
-def formatar_evolucao_exames(texto):
-    campos = [
-        "Data", "Cr", "eTFG", "Ur", "K", "Na", "Mg", "P",
-        "TGO", "TGP", "FAL", "gGT", "BT", "BD", "Alb",
-        "PCR", "Lc", "Bt", "Hb", "Plaq"
-    ]
-    resultados = {}
-    for campo in campos:
-        padrao = fr"{campo}\s*[:=]?\s*([\d.,]+)"
-        match = re.search(padrao, texto, re.IGNORECASE)
-        if match:
-            resultados[campo] = match.group(1).strip()
+# Função nova para Evolução exames UTI
+def extrair_info_evolucao(texto):
+    # Extrai as datas e valores laboratoriais de forma simples, exemplo:
+    # Ajuste os padrões conforme seu formato real dos exames no texto
+    padrao_valores = {
+        "Cr": r"Cr\s*[:=]\s*([\d,.]+)",
+        "eTFG": r"eTFG\s*[:=]\s*([\d,.]+)",
+        "Ur": r"Ur\s*[:=]\s*([\d,.]+)",
+        "K": r"K\s*[:=]\s*([\d,.]+)",
+        "Na": r"Na\s*[:=]\s*([\d,.]+)",
+        "Mg": r"Mg\s*[:=]\s*([\d,.]+)",
+        "P": r"P\s*[:=]\s*([\d,.]+)",
+        "TGO": r"TGO\s*[:=]\s*([\d,.]+)",
+        "TGP": r"TGP\s*[:=]\s*([\d,.]+)",
+        "FAL": r"FAL\s*[:=]\s*([\d,.]+)",
+        "gGT": r"gGT\s*[:=]\s*([\d,.]+)",
+        "BT": r"BT\s*[:=]\s*([\d,.]+)",
+        "BD": r"BD\s*[:=]\s*([\d,.]+)",
+        "Alb": r"Alb\s*[:=]\s*([\d,.]+)",
+        "PCR": r"PCR\s*[:=]\s*([\d,.]+)",
+        "Lc": r"Lc\s*[:=]\s*([\d,.]+)",
+        "Bt": r"Bt\s*[:=]\s*([\d,.]+)",
+        "Hb": r"Hb\s*[:=]\s*([\d,.]+)",
+        "Plaq": r"Plaq\s*[:=]\s*([\d,.]+)"
+    }
 
-    return "Evolução exames UTI:\n" + "; ".join(
-        [f"{k} {resultados.get(k, '---')}" + (" mL/min/1,73 m²" if k == "eTFG" else "") for k in campos]
-    )
+    # Para extrair múltiplas datas e os respectivos valores, considere que o texto tem blocos de exames.
+    # Aqui vou fazer uma extração simples só pra mostrar:
+    data_matches = re.findall(r'(\d{2}/\d{2}/\d{4})', texto)
+    datas = sorted(set(data_matches), key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
 
-# Execução conforme o modo escolhido
-if st.button("Gerar resultado"):
-    if not texto.strip():
-        st.warning("Por favor, cole o texto do prontuário.")
-    else:
-        if modo == "Admissão Ortopedia":
-            resultado = extrair_info(texto)
-        elif modo == "Evolução exames UTI":
-            resultado = formatar_evolucao_exames(texto)
+    linhas = []
+    for data in datas:
+        valores = []
+        for chave, padrao in padrao_valores.items():
+            busca = re.search(rf"{data}.*?{padrao}", texto, re.DOTALL)
+            valor = busca.group(1) if busca else "-"
+            valores.append(valor)
+        linha = f"{data} | " + " | ".join(valores)
+        linhas.append(linha)
 
-        st.text_area("Resultado Formatado:", resultado, height=800)
-        st.download_button("📥 Baixar como .txt", resultado, file_name="formatação_farmacia.txt")
+    cabecalho = "Data | Cr | eTFG | Ur | K | Na | Mg | P | TGO | TGP | FAL | gGT | BT | BD | Alb | PCR | Lc | Bt | Hb | Plaq"
+    resultado = cabecalho + "\n" + "\n".join(linhas)
+    return resultado
+
+# Escolhe função pelo modo selecionado
+if modo == "Admissão Ortopedia":
+    resultado = extrair_info(texto)
+else:
+    resultado = extrair_info_evolucao(texto)
+
+st.text_area("Resultado formatado:", value=resultado, height=600)
